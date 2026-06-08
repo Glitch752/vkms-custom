@@ -1,0 +1,73 @@
+diff --git a/drivers/gpu/drm/vkms/vkms_connector.c b/drivers/gpu/drm/vkms/vkms_connector.c
+index b0a6b212d..4cdc7b0b9 100644
+--- a/drivers/gpu/drm/vkms/vkms_connector.c
++++ b/drivers/gpu/drm/vkms/vkms_connector.c
+@@ -46,8 +46,10 @@ static int vkms_conn_get_modes(struct drm_connector *connector)
+ {
+ 	int count;
+ 
+-	/* Use the default modes list from DRM */
+-	count = drm_add_modes_noedid(connector, XRES_MAX, YRES_MAX);
++	// Provide a single mode: XRES_DEF x YRES_DEF @ 60Hz
++	struct drm_display_mode *drm_mode = drm_cvt_mode(connector->dev, XRES_DEF, YRES_DEF, 60, false, false, false);
++	count = drm_connector_helper_get_modes_fixed(connector, drm_mode);
++
+ 	drm_set_preferred_mode(connector, XRES_DEF, YRES_DEF);
+ 
+ 	return count;
+diff --git a/drivers/gpu/drm/vkms/vkms_drv.c b/drivers/gpu/drm/vkms/vkms_drv.c
+index 434c295f4..ae58d71da 100644
+--- a/drivers/gpu/drm/vkms/vkms_drv.c
++++ b/drivers/gpu/drm/vkms/vkms_drv.c
+@@ -34,9 +34,9 @@
+ #include "vkms_drv.h"
+ 
+ #define DRIVER_NAME	"vkms"
+-#define DRIVER_DESC	"Virtual Kernel Mode Setting"
++#define DRIVER_DESC	"Virtual Kernel Mode Setting, modified"
+ #define DRIVER_MAJOR	1
+-#define DRIVER_MINOR	0
++#define DRIVER_MINOR	1
+ 
+ static struct vkms_config *default_config;
+ 
+@@ -225,6 +225,8 @@ static int __init vkms_init(void)
+ 	int ret;
+ 	struct vkms_config *config;
+ 
++	pr_info("VKMS CUSTOM: Initializing\n");
++
+ 	ret = vkms_configfs_register();
+ 	if (ret)
+ 		return ret;
+@@ -245,6 +247,8 @@ static int __init vkms_init(void)
+ 
+ 	default_config = config;
+ 
++	pr_info("VKMS CUSTOM: Initialized with default device\n");
++
+ 	return 0;
+ }
+ 
+@@ -284,5 +288,6 @@ module_exit(vkms_exit);
+ 
+ MODULE_AUTHOR("Haneen Mohammed <hamohammed.sa@gmail.com>");
+ MODULE_AUTHOR("Rodrigo Siqueira <rodrigosiqueiramelo@gmail.com>");
++MODULE_AUTHOR("Yours Truly <3");
+ MODULE_DESCRIPTION(DRIVER_DESC);
+ MODULE_LICENSE("GPL");
+diff --git a/drivers/gpu/drm/vkms/vkms_drv.h b/drivers/gpu/drm/vkms/vkms_drv.h
+index 0933e4ce0..5d3fc76d5 100644
+--- a/drivers/gpu/drm/vkms/vkms_drv.h
++++ b/drivers/gpu/drm/vkms/vkms_drv.h
+@@ -17,8 +17,8 @@
+ #define XRES_MIN    10
+ #define YRES_MIN    10
+ 
+-#define XRES_DEF  1024
+-#define YRES_DEF   768
++#define XRES_DEF  2340
++#define YRES_DEF  1080
+ 
+ #define XRES_MAX  8192
+ #define YRES_MAX  8192
