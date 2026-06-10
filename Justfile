@@ -10,6 +10,12 @@ patch:
     cp patches/*.patch linux/
     cd linux && for patch in *.patch; do git apply $patch; done
 
+# create a new patch in the format ts-description.patch
+create-patch description:
+    cd linux && git add drivers/gpu/drm/vkms
+    cd linux && git commit -m "{{description}}"
+    cd linux && git format-patch -1 HEAD --stdout > ../patches/$(date +%Y%m%d%H%M%S)-{{description}}.patch
+
 CUSTOM_TREE := justfile_directory() + "/linux"
 
 # We build against /lib/modules/$(uname -r)/build

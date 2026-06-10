@@ -1,1 +1,7 @@
-linux/
+linux/*.o
+linux/*.ko
+linux/*.mod.c
+linux/*.cmd
+linux/modules.order
+linux/Module.symvers
+linux/modules.builtin

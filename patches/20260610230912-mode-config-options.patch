@@ -1,0 +1,423 @@
+ drivers/gpu/drm/vkms/vkms_config.c    |  31 ++++
+ drivers/gpu/drm/vkms/vkms_config.h    |  89 ++++++++++++
+ drivers/gpu/drm/vkms/vkms_configfs.c  | 195 ++++++++++++++++++++++++++
+ drivers/gpu/drm/vkms/vkms_connector.c |   6 +-
+ drivers/gpu/drm/vkms/vkms_drv.c       |   9 +-
+ drivers/gpu/drm/vkms/vkms_drv.h       |   4 +-
+ 6 files changed, 328 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/gpu/drm/vkms/vkms_config.c b/drivers/gpu/drm/vkms/vkms_config.c
+index 5a654d6dead8..f9a03d0a5037 100644
+--- a/drivers/gpu/drm/vkms/vkms_config.c
++++ b/drivers/gpu/drm/vkms/vkms_config.c
+@@ -598,6 +598,8 @@ struct vkms_config_connector *vkms_config_create_connector(struct vkms_config *c
+ 	connector_cfg->config = config;
+ 	connector_cfg->status = connector_status_connected;
+ 	xa_init_flags(&connector_cfg->possible_encoders, XA_FLAGS_ALLOC);
++	
++	INIT_LIST_HEAD(&connector_cfg->modes);
+ 
+ 	list_add_tail(&connector_cfg->link, &config->connectors);
+ 
+@@ -607,6 +609,12 @@ EXPORT_SYMBOL_IF_KUNIT(vkms_config_create_connector);
+ 
+ void vkms_config_destroy_connector(struct vkms_config_connector *connector_cfg)
+ {
++	struct vkms_config_mode *mode_cfg, *mode_tmp;
++
++	list_for_each_entry_safe(mode_cfg, mode_tmp, &connector_cfg->modes, link) {
++        vkms_config_destroy_mode(mode_cfg);
++    }
++
+ 	xa_destroy(&connector_cfg->possible_encoders);
+ 	list_del(&connector_cfg->link);
+ 	kfree(connector_cfg);
+@@ -647,3 +655,26 @@ void vkms_config_connector_detach_encoder(struct vkms_config_connector *connecto
+ 	}
+ }
+ EXPORT_SYMBOL_IF_KUNIT(vkms_config_connector_detach_encoder);
++
++struct vkms_config_mode *vkms_config_create_mode(struct vkms_config_connector *connector_cfg)
++{
++    struct vkms_config_mode *mode_cfg;
++
++    mode_cfg = kzalloc(sizeof(*mode_cfg), GFP_KERNEL);
++    if (!mode_cfg)
++        return ERR_PTR(-ENOMEM);
++
++    mode_cfg->config = connector_cfg;
++
++    list_add_tail(&mode_cfg->link, &connector_cfg->modes);
++
++    return mode_cfg;
++}
++EXPORT_SYMBOL_IF_KUNIT(vkms_config_create_mode);
++
++void vkms_config_destroy_mode(struct vkms_config_mode *mode_cfg)
++{
++    list_del(&mode_cfg->link);
++    kfree(mode_cfg);
++}
++EXPORT_SYMBOL_IF_KUNIT(vkms_config_destroy_mode);
+diff --git a/drivers/gpu/drm/vkms/vkms_config.h b/drivers/gpu/drm/vkms/vkms_config.h
+index 8f7f286a4bdd..6464d51dab1c 100644
+--- a/drivers/gpu/drm/vkms/vkms_config.h
++++ b/drivers/gpu/drm/vkms/vkms_config.h
+@@ -97,6 +97,20 @@ struct vkms_config_encoder {
+ 	struct drm_encoder *encoder;
+ };
+ 
++/**
++ * struct vkms_config_mode
++ * 
++ * @link: Link to the others modes in vkms_config_connector
++ * @config: The vkms_config_connector this mode belongs to
++ * @mode: Display mode information
++ */
++struct vkms_config_mode {
++	struct list_head link;
++	struct vkms_config_connector *config;
++
++	struct drm_display_mode mode;
++};
++
+ /**
+  * struct vkms_config_connector
+  *
+@@ -104,6 +118,7 @@ struct vkms_config_encoder {
+  * @config: The vkms_config this connector belongs to
+  * @status: Status (connected, disconnected...) of the connector
+  * @possible_encoders: Array of encoders that can be used with this connector
++ * @modes: Array of modes that can be used with this connector
+  * @connector: Internal usage. This pointer should never be considered as valid.
+  *             It can be used to store a temporary reference to a VKMS connector
+  *             during device creation. This pointer is not managed by the
+@@ -115,6 +130,7 @@ struct vkms_config_connector {
+ 
+ 	enum drm_connector_status status;
+ 	struct xarray possible_encoders;
++	struct list_head modes;
+ 
+ 	/* Internal usage */
+ 	struct vkms_connector *connector;
+@@ -486,4 +502,77 @@ vkms_config_connector_set_status(struct vkms_config_connector *connector_cfg,
+ 	connector_cfg->status = status;
+ }
+ 
++/**
++ * vkms_config_create_mode() - Add a new mode configuration to a connector
++ * @connector_cfg: Connector configuration to add the mode to
++ *
++ * Returns:
++ * The new mode configuration or an error. Call vkms_config_destroy_mode() to
++ * free the returned mode configuration.
++ */
++struct vkms_config_mode *vkms_config_create_mode(struct vkms_config_connector *connector_cfg);
++
++/**
++ * vkms_config_destroy_mode() - Remove and free a mode configuration
++ * @mode_cfg: Mode configuration to destroy
++ */
++void vkms_config_destroy_mode(struct vkms_config_mode *mode_cfg);
++
++/**
++ * vkms_config_mode_get_hdisplay() - Get the horizontal display resolution
++ * @mode_cfg: Mode to get the attribute from
++ */
++static inline u16 vkms_config_mode_get_hdisplay(struct vkms_config_mode *mode_cfg)
++{
++    return mode_cfg->mode.hdisplay;
++}
++
++/**
++ * vkms_config_mode_set_hdisplay() - Set the horizontal display resolution
++ * @mode_cfg: Mode to configure
++ * @hdisplay: Horizontal resolution in pixels
++ */
++static inline void vkms_config_mode_set_hdisplay(struct vkms_config_mode *mode_cfg, u16 hdisplay)
++{
++    mode_cfg->mode.hdisplay = hdisplay;
++}
++
++/**
++ * vkms_config_mode_get_vdisplay() - Get the vertical display resolution
++ * @mode_cfg: Mode to get the attribute from
++ */
++static inline u16 vkms_config_mode_get_vdisplay(struct vkms_config_mode *mode_cfg)
++{
++    return mode_cfg->mode.vdisplay;
++}
++
++/**
++ * vkms_config_mode_set_vdisplay() - Set the vertical display resolution
++ * @mode_cfg: Mode to configure
++ * @vdisplay: Vertical resolution in pixels
++ */
++static inline void vkms_config_mode_set_vdisplay(struct vkms_config_mode *mode_cfg, u16 vdisplay)
++{
++    mode_cfg->mode.vdisplay = vdisplay;
++}
++
++/**
++ * vkms_config_mode_get_vrefresh() - Get the vertical refresh rate
++ * @mode_cfg: Mode to get the attribute from
++ */
++static inline u16 vkms_config_mode_get_vrefresh(struct vkms_config_mode *mode_cfg)
++{
++    return mode_cfg->mode.vrefresh;
++}
++
++/**
++ * vkms_config_mode_set_vrefresh() - Set the vertical refresh rate
++ * @mode_cfg: Mode to configure
++ * @vrefresh: Refresh rate in Hz
++ */
++static inline void vkms_config_mode_set_vrefresh(struct vkms_config_mode *mode_cfg, u16 vrefresh)
++{
++    mode_cfg->mode.vrefresh = vrefresh;
++}
++
+ #endif /* _VKMS_CONFIG_H_ */
+diff --git a/drivers/gpu/drm/vkms/vkms_configfs.c b/drivers/gpu/drm/vkms/vkms_configfs.c
+index 7551b8c7766d..6c08fea615a4 100644
+--- a/drivers/gpu/drm/vkms/vkms_configfs.c
++++ b/drivers/gpu/drm/vkms/vkms_configfs.c
+@@ -84,6 +84,20 @@ struct vkms_configfs_encoder {
+ 	struct vkms_config_encoder *config;
+ };
+ 
++/**
++ * struct vkms_configfs_connector - Configfs representation of a connector mode
++ * 
++ * @group: Top level configuration group that represents a connector mode.
++ * Initialized when a new directory is created under "/config/vkms/connectors/*\/modes"
++ * @dev: The vkms_configfs_device this connector mode belongs to
++ * @config: Configuration of the VKMS connector mode
++ */
++struct vkms_configfs_mode {
++	struct config_group group;
++	struct vkms_configfs_device *dev;
++	struct vkms_config_mode *config;
++};
++
+ /**
+  * struct vkms_configfs_connector - Configfs representation of a connector
+  *
+@@ -91,12 +105,14 @@ struct vkms_configfs_encoder {
+  * Initialized when a new directory is created under "/config/vkms/connectors"
+  * @possible_encoders_group: Default subgroup of @group at
+  * "connector/possible_encoders"
++ * @modes_group: Default subgroup of @group at "connector/modes"
+  * @dev: The vkms_configfs_device this connector belongs to
+  * @config: Configuration of the VKMS connector
+  */
+ struct vkms_configfs_connector {
+ 	struct config_group group;
+ 	struct config_group possible_encoders_group;
++	struct config_group modes_group;
+ 	struct vkms_configfs_device *dev;
+ 	struct vkms_config_connector *config;
+ };
+@@ -134,6 +150,14 @@ struct vkms_configfs_connector {
+ 	container_of(to_config_group((item)), struct vkms_configfs_connector, \
+ 		     possible_encoders_group)
+ 
++#define connector_modes_item_to_vkms_configfs_connector(item) \
++	container_of(to_config_group((item)), struct vkms_configfs_connector, \
++		     modes_group)
++
++#define mode_item_to_vkms_configfs_mode(item) \
++    container_of(to_config_group((item)), struct vkms_configfs_mode, \
++             group)
++
+ static ssize_t crtc_writeback_show(struct config_item *item, char *page)
+ {
+ 	struct vkms_configfs_crtc *crtc;
+@@ -638,6 +662,173 @@ static const struct config_item_type connector_possible_encoders_group_type = {
+ 	.ct_owner	= THIS_MODULE,
+ };
+ 
++static ssize_t mode_hdisplay_show(struct config_item *item, char *page)
++{
++    struct vkms_configfs_mode *mode = mode_item_to_vkms_configfs_mode(item);
++    u16 hdisplay;
++
++    scoped_guard(mutex, &mode->dev->lock)
++        hdisplay = vkms_config_mode_get_hdisplay(mode->config);
++
++    return sprintf(page, "%u\n", hdisplay);
++}
++
++static ssize_t mode_hdisplay_store(struct config_item *item, const char *page,
++                   size_t count)
++{
++    struct vkms_configfs_mode *mode = mode_item_to_vkms_configfs_mode(item);
++    u16 hdisplay;
++
++    if (kstrtou16(page, 10, &hdisplay))
++        return -EINVAL;
++
++    scoped_guard(mutex, &mode->dev->lock) {
++        if (mode->dev->enabled)
++            return -EBUSY;
++
++        vkms_config_mode_set_hdisplay(mode->config, hdisplay);
++    }
++
++    return (ssize_t)count;
++}
++
++static ssize_t mode_vdisplay_show(struct config_item *item, char *page)
++{
++    struct vkms_configfs_mode *mode = mode_item_to_vkms_configfs_mode(item);
++    u16 vdisplay;
++
++    scoped_guard(mutex, &mode->dev->lock)
++        vdisplay = vkms_config_mode_get_vdisplay(mode->config);
++
++    return sprintf(page, "%u\n", vdisplay);
++}
++
++static ssize_t mode_vdisplay_store(struct config_item *item, const char *page,
++                   size_t count)
++{
++    struct vkms_configfs_mode *mode = mode_item_to_vkms_configfs_mode(item);
++    u16 vdisplay;
++
++    if (kstrtou16(page, 10, &vdisplay))
++        return -EINVAL;
++
++    scoped_guard(mutex, &mode->dev->lock) {
++        if (mode->dev->enabled)
++            return -EBUSY;
++
++        vkms_config_mode_set_vdisplay(mode->config, vdisplay);
++    }
++
++    return (ssize_t)count;
++}
++
++static ssize_t mode_vrefresh_show(struct config_item *item, char *page)
++{
++    struct vkms_configfs_mode *mode = mode_item_to_vkms_configfs_mode(item);
++    u16 vrefresh;
++
++    scoped_guard(mutex, &mode->dev->lock)
++        vrefresh = vkms_config_mode_get_vrefresh(mode->config);
++
++    return sprintf(page, "%u\n", vrefresh);
++}
++
++static ssize_t mode_vrefresh_store(struct config_item *item, const char *page,
++                   size_t count)
++{
++    struct vkms_configfs_mode *mode = mode_item_to_vkms_configfs_mode(item);
++    u16 vrefresh;
++
++    if (kstrtou16(page, 10, &vrefresh))
++        return -EINVAL;
++
++    scoped_guard(mutex, &mode->dev->lock) {
++        if (mode->dev->enabled)
++            return -EBUSY;
++
++        vkms_config_mode_set_vrefresh(mode->config, vrefresh);
++    }
++
++    return (ssize_t)count;
++}
++
++CONFIGFS_ATTR(mode_, hdisplay);
++CONFIGFS_ATTR(mode_, vdisplay);
++CONFIGFS_ATTR(mode_, vrefresh);
++
++static struct configfs_attribute *mode_item_attrs[] = {
++    &mode_attr_hdisplay,
++    &mode_attr_vdisplay,
++    &mode_attr_vrefresh,
++    NULL,
++};
++
++static void mode_release(struct config_item *item)
++{
++    struct vkms_configfs_mode *mode = mode_item_to_vkms_configfs_mode(item);
++    struct mutex *lock = &mode->dev->lock;
++
++    scoped_guard(mutex, lock) {
++        vkms_config_destroy_mode(mode->config);
++        kfree(mode);
++    }
++}
++
++static struct configfs_item_operations mode_item_operations = {
++    .release    = &mode_release,
++};
++
++static const struct config_item_type mode_item_type = {
++    .ct_attrs   = mode_item_attrs,
++    .ct_item_ops    = &mode_item_operations,
++    .ct_owner   = THIS_MODULE,
++};
++
++static struct config_group *make_mode_group(struct config_group *group,
++                        const char *name)
++{
++    struct vkms_configfs_connector *connector;
++    struct vkms_configfs_device *dev;
++    struct vkms_configfs_mode *mode;
++    int ret;
++
++    /* The group passed here is the "modes" default group */
++    connector = connector_modes_item_to_vkms_configfs_connector(&group->cg_item);
++    dev = connector->dev;
++
++    scoped_guard(mutex, &dev->lock) {
++        if (dev->enabled)
++            return ERR_PTR(-EBUSY);
++
++        mode = kzalloc(sizeof(*mode), GFP_KERNEL);
++        if (!mode)
++            return ERR_PTR(-ENOMEM);
++
++        mode->dev = dev;
++
++        /* Allocate the underlying mode config and attach it to the connector */
++        mode->config = vkms_config_create_mode(connector->config);
++        if (IS_ERR(mode->config)) {
++            ret = PTR_ERR(mode->config);
++            kfree(mode);
++            return ERR_PTR(ret);
++        }
++
++        config_group_init_type_name(&mode->group, name, &mode_item_type);
++    }
++
++    return &mode->group;
++}
++
++static struct configfs_group_operations modes_group_operations = {
++    .make_group = &make_mode_group,
++};
++
++static const struct config_item_type connector_modes_group_type = {
++    .ct_group_ops   = &modes_group_operations,
++    .ct_owner   = THIS_MODULE,
++};
++
+ static struct config_group *make_connector_group(struct config_group *group,
+ 						 const char *name)
+ {
+@@ -672,6 +863,10 @@ static struct config_group *make_connector_group(struct config_group *group,
+ 					    &connector_possible_encoders_group_type);
+ 		configfs_add_default_group(&connector->possible_encoders_group,
+ 					   &connector->group);
++		
++		config_group_init_type_name(&connector->modes_group, "modes",
++					    &connector_modes_group_type);
++		configfs_add_default_group(&connector->modes_group, &connector->group);
+ 	}
+ 
+ 	return &connector->group;
+-- 
+2.54.0
+

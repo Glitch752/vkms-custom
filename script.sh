@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+# set -e
 
 # https://docs.kernel.org/gpu/vkms.html
 
@@ -17,7 +17,8 @@ if pgrep -x "sunshine" > /dev/null; then
 fi
 
 # Start sunshine
-sunshine &
+sunshine & disown
+
 # Open the sunshine web interface
 xdg-open https://localhost:47990
 
