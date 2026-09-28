@@ -1,7 +1,7 @@
-linux/*.o
-linux/*.ko
-linux/*.mod.c
-linux/*.cmd
-linux/modules.order
-linux/Module.symvers
-linux/modules.builtin
+src/*.o
+src/*.ko
+src/*.mod.c
+src/*.cmd
+src/modules.order
+src/Module.symvers
+src/modules.builtin
